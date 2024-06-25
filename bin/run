@@ -1,0 +1,14 @@
+#!/usr/bin/env php
+<?php
+require_once(__DIR__ . '/../vendor/autoload.php');
+(new TJM\WPToMarkdown([
+	'db'=> [
+		'dsn'=> $argv[2] ?? null,
+		'user'=> $argv[3] ?? 'root',
+		'password'=> $argv[4] ?? '',
+		'sshID'=> $argv[6] ?? null,
+	],
+	'dbPrefix'=> $argv[5] ?? '',
+	'destination'=> $argv[1],
+]))();
+

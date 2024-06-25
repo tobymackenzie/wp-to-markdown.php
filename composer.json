@@ -1,0 +1,29 @@
+{
+	"name": "tjm/wp-to-markdown"
+	,"description": "Convert WordPress posts to markdown files through database connection"
+	,"authors": [
+		{
+			"name": "Toby Mackenzie"
+			,"email": "public@tobymackenzie.com"
+			,"homepage": "https://www.tobymackenzie.com"
+		}
+	]
+	,"license": "0BSD"
+	,"autoload": {
+		"classmap": ["src/WPToMarkdown.php"]
+	}
+	,"autoload-dev": {
+		"psr-4": {
+			"TJM\\WPToMarkdown\\Tests\\": "tests"
+		}
+	}
+	,"require": {
+		"php": ">=7.4",
+		"symfony/yaml": "^5.4",
+		"tjm/db": "^0.2",
+		"tjm/wiki-site": "^0.0"
+	}
+	,"require-dev": {
+		"tjm/dev": "*"
+	}
+}
