@@ -237,7 +237,7 @@ class WPToMarkdown{
 				if(!file_exists($path) || $fullContent !== file_get_contents($path)){
 					$dir = dirname($path);
 					if(!is_dir($dir)){
-						echo "- making dir {$dir}";
+						echo "- making dir {$dir}\n";
 						exec('mkdir -p ' . escapeshellarg($dir));
 					}
 					echo "- writing {$path}\n";
