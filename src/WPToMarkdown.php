@@ -13,6 +13,7 @@ class WPToMarkdown{
 	protected $db; //--DB instance, DSN string, or array of arguments for DB
 	protected $dbPrefix = ''; //--prefix to db tables
 	protected $destination; //--path to save files to
+	protected $origDestination; //--path to save original content as files to.  Primarily to verify changes locally.  No-op if empty
 	protected $permalinkStructure = '/%year%/%monthnum%/%day%/%postname%/'; //--match WordPress's permalink structure setting. -! not fully implemented
 	protected $toMarkdownConverter; //--instance of ConverterInterface or League\…\HtmlToMarkdownConverterInterface to convert to markdown.  will create one if none provided.
 
@@ -205,6 +206,20 @@ class WPToMarkdown{
 
 				//--build main content
 				$content = $post['post_content_filtered'] ?: $post['post_content'];
+
+				//-- output original content, if set
+				if(!empty($this->origDestination)){
+					if(!file_exists($this->origDestination) || $content !== file_get_contents($this->origDestination)){
+						$dir = dirname($this->origDestination);
+						if(!is_dir($dir)){
+							echo "- making dir {$dir}\n";
+							exec('mkdir -p ' . escapeshellarg($dir));
+						}
+						echo "- writing {$this->origDestination}\n";
+						file_put_contents($this->origDestination, $content);
+					}
+				}
+
 
 				//--fix: some posts seem to have wrong line break
 				$content = str_replace("\r\n", "\n", $content);
