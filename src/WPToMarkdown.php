@@ -208,15 +208,16 @@ class WPToMarkdown{
 				$content = $post['post_content_filtered'] ?: $post['post_content'];
 
 				//-- output original content, if set
-				if(!empty($this->origDestination)){
-					if(!file_exists($this->origDestination) || $content !== file_get_contents($this->origDestination)){
-						$dir = dirname($this->origDestination);
+				$origDestination = str_replace($this->destination, $this->origDestination, $path);
+				if(!empty($origDestination)){
+					if(!file_exists($origDestination) || $content !== file_get_contents($origDestination)){
+						$dir = dirname($origDestination);
 						if(!is_dir($dir)){
 							echo "- making dir {$dir}\n";
 							exec('mkdir -p ' . escapeshellarg($dir));
 						}
-						echo "- writing {$this->origDestination}\n";
-						file_put_contents($this->origDestination, $content);
+						echo "- writing {$origDestination}\n";
+						file_put_contents($origDestination, $content);
 					}
 				}
 
