@@ -131,7 +131,6 @@ class WPToMarkdown extends Task{
 			while(($post = $posts->fetch())){
 				++$realCount;
 				$path = $this->getPostPath($post);
-				echo $path . "\n";
 
 				//--build meta
 				$meta = ['categories'=> []];
