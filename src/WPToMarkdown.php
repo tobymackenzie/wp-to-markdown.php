@@ -5,10 +5,11 @@ use League\HTMLToMarkdown\HtmlConverter;
 use PDO;
 use Symfony\Component\Yaml\Yaml;
 use TJM\DB;
+use TJM\TaskRunner\Task;
 use TJM\WikiSite\FormatConverter\ConverterInterface;
 use TJM\WikiSite\FormatConverter\MarkdownToCleanMarkdownConverter;
 
-class WPToMarkdown{
+class WPToMarkdown extends Task{
 	protected $batch = 250; //--how many posts to query for at once.  Larger number risks hitting memory ceiling but goes faster
 	protected $db; //--DB instance, DSN string, or array of arguments for DB
 	protected $dbPrefix = ''; //--prefix to db tables
@@ -24,9 +25,9 @@ class WPToMarkdown{
 	}
 
 	public function __invoke(){
-		return $this->run();
+		return $this->do();
 	}
-	public function run(){
+	public function do(){
 		if(!($this->db instanceof DB)){
 			$this->db = new DB($this->db);
 		}
