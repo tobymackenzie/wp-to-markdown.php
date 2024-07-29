@@ -14,7 +14,7 @@ To run, install package, run `composer install`, then run `bin/run` at the comma
 
 or, better, modify the `bin/run` file to add those values.
 
-Can also be used in PHP code with `(new TJM\WPToMarkdown($opts))->run()`.  See `src/WPToMarkdown.php` for options.
+Can also be used in PHP code with `(new TJM\WPToMarkdown($opts))()`.  See `src/WPToMarkdown.php` for options.
 
 License
 ------
