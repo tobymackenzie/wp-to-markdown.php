@@ -67,6 +67,7 @@ class WPToMarkdown extends Task{
 			'where'=> [
 				'this.post_type'=> 'post',
 				'this.post_status'=> 'publish',
+				// 'this.ID'=> 567,
 			],
 		];
 
@@ -208,8 +209,8 @@ class WPToMarkdown extends Task{
 				$content = $post['post_content_filtered'] ?: $post['post_content'];
 
 				//-- output original content, if set
-				$origDestination = str_replace($this->destination, $this->origDestination, $path);
-				if(!empty($origDestination)){
+				if(!empty($this->origDestination)){
+					$origDestination = str_replace($this->destination, $this->origDestination, $path);
 					if(!file_exists($origDestination) || $content !== file_get_contents($origDestination)){
 						$dir = dirname($origDestination);
 						if(!is_dir($dir)){
