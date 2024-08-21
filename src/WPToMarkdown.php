@@ -4,16 +4,19 @@ use DateTime;
 use League\HTMLToMarkdown\HtmlConverter;
 use PDO;
 use Symfony\Component\Yaml\Yaml;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
 use TJM\DB;
 use TJM\TaskRunner\Task;
 use TJM\WikiSite\FormatConverter\ConverterInterface;
 use TJM\WikiSite\FormatConverter\MarkdownToCleanMarkdownConverter;
+use TJM\WPToMarkdown\Event\ConvertedContentEvent;
 
 class WPToMarkdown extends Task{
 	protected $batch = 250; //--how many posts to query for at once.  Larger number risks hitting memory ceiling but goes faster
 	protected $db; //--DB instance, DSN string, or array of arguments for DB
 	protected $dbPrefix = ''; //--prefix to db tables
 	protected $destination; //--path to save files to
+	protected ?EventDispatcherInterface $eventDispatcher = null;
 	protected $origDestination; //--path to save original content as files to.  Primarily to verify changes locally.  No-op if empty
 	protected $permalinkStructure = '/%year%/%monthnum%/%day%/%postname%/'; //--match WordPress's permalink structure setting. -! not fully implemented
 	protected $toMarkdownConverter; //--instance of ConverterInterface or League\…\HtmlToMarkdownConverterInterface to convert to markdown.  will create one if none provided.
@@ -247,6 +250,13 @@ class WPToMarkdown extends Task{
 				//--add h1
 				if($post['post_title']){
 					$content = $post['post_title'] . "\n" . str_repeat('=', strlen($post['post_title'])) . "\n\n" . $content;
+				}
+
+				//--event dispatcher
+				if($this->eventDispatcher){
+					$event = new ConvertedContentEvent($content, $path);
+					$this->eventDispatcher->dispatch($event);
+					$content = $event->getContent();
 				}
 
 				//--write full content if not matching existing file

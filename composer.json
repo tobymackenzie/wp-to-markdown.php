@@ -10,7 +10,10 @@
 	]
 	,"license": "0BSD"
 	,"autoload": {
-		"classmap": ["src/WPToMarkdown.php"]
+		"classmap": ["src/WPToMarkdown.php"],
+		"psr-4": {
+			"TJM\\WPToMarkdown\\": "src"
+		}
 	}
 	,"autoload-dev": {
 		"psr-4": {
