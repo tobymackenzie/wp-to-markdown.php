@@ -141,14 +141,12 @@ class WPToMarkdown extends Task{
 				foreach([
 					'comment_count'=> 'comment_count',
 					'date'=> 'post_date',
-					'date_gmt'=> 'post_date_gmt',
 					'excerpt'=> 'post_excerpt',
 					'guid'=> 'guid',
 					'id'=> 'ID',
 					'image'=> 'image',
 					'image_alt'=> 'image_alt',
 					'modified'=> 'post_modified',
-					'modified_gmt'=> 'post_modified_gmt',
 					'name'=> 'post_name',
 					'pings'=> 'pinged',
 					'tags'=> 'tags',
@@ -171,10 +169,6 @@ class WPToMarkdown extends Task{
 							$diff = date_diff(new DateTime($value), new DateTime($post['post_' . $key . '_gmt']));
 							$diff = ($diff->invert ? '+' : '-') . str_pad($diff->h, 2, '0', STR_PAD_LEFT) . ':00';
 							$value = new DateTime($value . $diff);
-						break;
-						case 'date_gmt':
-						case 'modified_gmt':
-							$value = new DateTime($value);
 						break;
 						case 'id':
 						case 'comment_count':
