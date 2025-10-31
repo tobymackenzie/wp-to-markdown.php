@@ -25,7 +25,7 @@
 		"symfony/yaml": "^5.4",
 		"tjm/db": "^0.2",
 		"tjm/task-runner": "^0.1",
-		"tjm/wiki-site": "^0.0"
+		"tjm/wiki-site": "^0"
 	}
 	,"require-dev": {
 		"tjm/dev": "*"
