@@ -15,6 +15,7 @@ class WPToMarkdown extends Task{
 	protected $batch = 250; //--how many posts to query for at once.  Larger number risks hitting memory ceiling but goes faster
 	protected $db; //--DB instance, DSN string, or array of arguments for DB
 	protected $dbPrefix = ''; //--prefix to db tables
+	protected $defaultCategory; //--default category if none set
 	protected $destination; //--path to save files to
 	protected ?EventDispatcherInterface $eventDispatcher = null;
 	protected $origDestination; //--path to save original content as files to.  Primarily to verify changes locally.  No-op if empty
@@ -254,6 +255,9 @@ class WPToMarkdown extends Task{
 				}
 
 				//--write full content if not matching existing file
+				if(empty($meta['categories']) && !empty($this->defaultCategory)){
+					$meta['categories'] = [$this->defaultCategory];
+				}
 				$fullContent = "---\n" . Yaml::dump($meta, 1, 1) . "---\n\n" . $content;
 				if(!file_exists($path) || $fullContent !== file_get_contents($path)){
 					$dir = dirname($path);
