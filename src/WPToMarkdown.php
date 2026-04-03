@@ -225,7 +225,7 @@ class WPToMarkdown extends Task{
 				$content = str_replace("\r\n", "\n", $content);
 
 				//--fix: posts seem to have some chars encoded, shouldn't when markdown
-				if(strpos($content, '<pre>') === false){
+				if(strpos($content, '<pre>') === false || strpos($content, '```') !== false){
 					$content = htmlspecialchars_decode($content);
 				}
 
