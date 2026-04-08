@@ -13,6 +13,7 @@ use TJM\WPToMarkdown\Event\ConvertedContentEvent;
 
 class WPToMarkdown extends Task{
 	protected $batch = 250; //--how many posts to query for at once.  Larger number risks hitting memory ceiling but goes faster
+	protected $categoryPath = '/category';
 	protected $db; //--DB instance, DSN string, or array of arguments for DB
 	protected $dbPrefix = ''; //--prefix to db tables
 	protected $defaultCategory; //--default category if none set
@@ -45,10 +46,11 @@ class WPToMarkdown extends Task{
 		//--must disable `ONLY_FULL_GROUP_BY` mode to allow semi-ambiguous tags query to be run along with image meta query
 		$this->db->query('SET sql_mode=(SELECT REPLACE(@@sql_mode,"ONLY_FULL_GROUP_BY",""))')->execute([]);
 
+		//==cats
 		//--grab categories so we can separate them from tags later (more efficient to do in single query)
 		$cats = [];
 		$catQuery = $this->db->query([
-			'values'=> 'this.slug',
+			'values'=> 'this.slug, this.name, tt.description',
 			'table'=> $this->dbPrefix . 'terms',
 			'joins'=> [
 				'tt'=> [
@@ -61,10 +63,34 @@ class WPToMarkdown extends Task{
 				'this.slug IS NOT NULL',
 			],
 		]);
+		if($this->categoryPath){
+			$catPath = $this->destination . $this->categoryPath;
+			if(!is_dir($catPath)){
+				mkdir($catPath);
+			}
+		}
+		$modifiedCount = 0;
+		$modifiedCatCount = 0;
 		while(($cat = $catQuery->fetch())){
+			//--save for use with posts
 			$cats[] = $cat['slug'];
+			//--store in data
+			if($this->categoryPath){
+				$catFilePath = $catPath . '/' . $cat['slug'] . '.md';
+				$catContent = trim($this->toMarkdownConverter->convert($cat['name'])) . "\n========\n\n" . $this->toMarkdownConverter->convert($cat['description']);
+				if(!file_exists($catFilePath) || file_get_contents($catFilePath) !== $catContent){
+					echo "writing category file {$catFilePath}\n";
+					file_put_contents($catFilePath, $catContent);
+					++$modifiedCount;
+					++$modifiedCatCount;
+				}
+			}
+		}
+		if($modifiedCatCount){
+			echo "Wrote {$modifiedCatCount} of " . count($cats) . " categories\n";
 		}
 
+		//==posts
 		//--build general post query
 		$getQueryParts = [
 			'table'=> $this->dbPrefix . 'posts',
@@ -129,7 +155,7 @@ class WPToMarkdown extends Task{
 		]));
 		$offset = 0;
 		$realCount = 0;
-		$modifiedCount = 0;
+		$modifiedPostCount = 0;
 		do{
 			$getQuery->getQuery()->setParameter('offset', $offset);
 			$posts = $this->db->query($getQuery);
@@ -268,11 +294,12 @@ class WPToMarkdown extends Task{
 					echo "- writing {$path}\n";
 					file_put_contents($path, $fullContent);
 					++$modifiedCount;
+					++$modifiedPostCount;
 				}
 			}
 			$offset += $this->batch;
 		}while($offset < $count);
-		echo "Wrote {$modifiedCount} of {$realCount} ({$count}) posts\n";
+		echo "Wrote {$modifiedPostCount} of {$realCount} ({$count}) posts\n";
 		return $modifiedCount;
 	}
 
