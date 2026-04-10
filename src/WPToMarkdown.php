@@ -1,6 +1,7 @@
 <?php
 namespace TJM;
 use DateTime;
+use Exception;
 use League\HTMLToMarkdown\HtmlConverter;
 use PDO;
 use Symfony\Component\Yaml\Yaml;
@@ -9,19 +10,31 @@ use TJM\DB;
 use TJM\TaskRunner\Task;
 use TJM\WikiSite\FormatConverter\ConverterInterface;
 use TJM\WikiSite\FormatConverter\MarkdownToCleanMarkdownConverter;
+use TJM\WPToMarkdown\Comment;
 use TJM\WPToMarkdown\Event\ConvertedContentEvent;
 
 class WPToMarkdown extends Task{
-	protected $batch = 250; //--how many posts to query for at once.  Larger number risks hitting memory ceiling but goes faster
-	protected $categoryPath = '/category';
-	protected $db; //--DB instance, DSN string, or array of arguments for DB
-	protected $dbPrefix = ''; //--prefix to db tables
-	protected $defaultCategory; //--default category if none set
-	protected $destination; //--path to save files to
+	//---how many posts to query for at once.  Larger number risks hitting memory ceiling but goes faster
+	protected $batch = 250;
+	//---DB instance, DSN string, or array of arguments for DB
+	protected $db;
+	//---prefix to db tables
+	protected $dbPrefix = '';
+	//---default category if none set
+	protected $defaultCategory;
 	protected ?EventDispatcherInterface $eventDispatcher = null;
-	protected $origDestination; //--path to save original content as files to.  Primarily to verify changes locally.  No-op if empty
-	protected $permalinkStructure = '/%year%/%monthnum%/%day%/%postname%/'; //--match WordPress's permalink structure setting. -! not fully implemented
-	protected $toMarkdownConverter; //--instance of ConverterInterface or League\…\HtmlToMarkdownConverterInterface to convert to markdown.  will create one if none provided.
+	//---match WordPress's permalink structure setting. -! not fully implemented
+	protected $permalinkStructure = '/%year%/%monthnum%/%day%/%postname%/';
+	//---instance of ConverterInterface or League\…\HtmlToMarkdownConverterInterface to convert to markdown.  will create one if none provided.
+	protected $toMarkdownConverter;
+	//--paths
+	protected $categoryPath = '/category';
+	protected $commentsPath = '/comments';
+	//---path to save files to
+	protected $destination;
+	protected $mentionsPath = '/mentions';
+	//---path to save original content as files to.  Primarily to verify changes locally.  No-op if empty
+	protected $origDestination;
 
 	public function __construct($opts = []){
 		foreach($opts as $key=> $value){
@@ -46,6 +59,8 @@ class WPToMarkdown extends Task{
 		//--must disable `ONLY_FULL_GROUP_BY` mode to allow semi-ambiguous tags query to be run along with image meta query
 		$this->db->query('SET sql_mode=(SELECT REPLACE(@@sql_mode,"ONLY_FULL_GROUP_BY",""))')->execute([]);
 
+		$modifiedCount = 0;
+
 		//==cats
 		//--grab categories so we can separate them from tags later (more efficient to do in single query)
 		$cats = [];
@@ -69,7 +84,6 @@ class WPToMarkdown extends Task{
 				mkdir($catPath);
 			}
 		}
-		$modifiedCount = 0;
 		$modifiedCatCount = 0;
 		while(($cat = $catQuery->fetch())){
 			//--save for use with posts
@@ -193,9 +207,7 @@ class WPToMarkdown extends Task{
 						break;
 						case 'date':
 						case 'modified':
-							$diff = date_diff(new DateTime($value), new DateTime($post['post_' . $key . '_gmt']));
-							$diff = ($diff->invert ? '+' : '-') . str_pad($diff->h, 2, '0', STR_PAD_LEFT) . ':00';
-							$value = new DateTime($value . $diff);
+							$value = static::getDate($value, $post['post_' . $key . '_gmt']);
 						break;
 						case 'id':
 						case 'comment_count':
@@ -246,19 +258,10 @@ class WPToMarkdown extends Task{
 					}
 				}
 
-
-				//--fix: some posts seem to have wrong line break
-				$content = str_replace("\r\n", "\n", $content);
-
-				//--fix: posts seem to have some chars encoded, shouldn't when markdown
-				if(strpos($content, '<pre>') === false || strpos($content, '```') !== false){
-					$content = htmlspecialchars_decode($content);
-				}
-
 				//--convert to markdown
 				try{
-					$content = $this->toMarkdownConverter->convert($content);
-				}catch(\Exception $e){
+						$content = $this->convertPost($content);
+				}catch(Exception $e){
 					if(function_exists('dump')){
 						dump($post);
 						dump($e);
@@ -300,9 +303,130 @@ class WPToMarkdown extends Task{
 			$offset += $this->batch;
 		}while($offset < $count);
 		echo "Wrote {$modifiedPostCount} of {$realCount} ({$count}) posts\n";
+
+		//==comments
+		if($this->commentsPath){
+			$i = 0;
+			$commentQuery = $this->db->query([
+				'values'=> 'this.comment_ID, this.comment_author, this.comment_author_email, this.comment_author_url, this.comment_content, this.comment_date, this.comment_date_gmt, this.comment_parent, this.comment_type, this.user_id, p.ID, p.post_date, p.post_name',
+				'table'=> $this->dbPrefix . 'comments',
+				'joins'=> [
+					'p'=> [
+						'on'=> 'p.ID = this.comment_post_ID',
+						'table'=> $this->dbPrefix . 'posts',
+					],
+				],
+				'where'=> [
+					'comment_approved'=> 1,
+				],
+			]);
+			$modifiedCount = 0;
+			$modifiedCommentsCount = 0;
+			$posts = [];
+			$unaddedComments = [];
+			//-# need three loops to build nested hierarchy, handle out of order comments, and then output
+			while(($comment = $commentQuery->fetch())){
+				$comment = new Comment($comment);
+				if(!isset($posts[$comment['ID']])){
+					$posts[$comment['ID']] = [
+						'comments'=> [],
+						'commentsInc'=> 0,
+						'mentionsInc'=> 0,
+					];
+				}
+				$posts[$comment['ID']]['comments'][$comment['comment_ID']] = $comment;
+				if($comment['comment_parent']){
+					if(isset($posts[$comment['ID']]['comments'][$comment['comment_parent']])){
+						$posts[$comment['ID']]['comments'][$comment['comment_parent']]->addComment($comment);
+					}else{
+						$unaddedComments[] = &$comment;
+					}
+				}else{
+					$type = $this->mentionsPath && $comment['comment_type'] !== 'comment' ? 'mention' : 'comment';
+					$comment['inc'] = ++$posts[$comment['ID']][$type === 'comment' ? 'commentsInc' : 'mentionsInc'];
+				}
+			}
+			foreach($unaddedComments as $comment){
+				$posts[$comment['ID']]['comments'][$comment['comment_parent']]->addComment($comment);
+			}
+			foreach($posts as &$post){
+				$comment = reset($post['comments']);
+				$postPath = $this->getPostPath($comment->getPostData());
+				$postDirPath = pathinfo($postPath, PATHINFO_DIRNAME) . '/' . pathinfo($postPath, PATHINFO_FILENAME);
+				if(!is_dir($postDirPath)){
+					mkdir($postDirPath);
+				}
+				$commentsDir = $postDirPath . $this->commentsPath;
+				if(!is_dir($commentsDir)){
+					mkdir($commentsDir);
+				}
+				if($this->mentionsPath){
+					$mentionsDir = $postDirPath . $this->mentionsPath;
+					if(!is_dir($mentionsDir)){
+						mkdir($mentionsDir);
+					}
+				}
+				foreach($post['comments'] as $comment){
+					$type = $this->mentionsPath && $comment['comment_type'] !== 'comment' ? 'mention' : 'comment';
+					if(!$comment['comment_parent']){
+						$changes = $this->putComment($comment, $comment['inc'], $type === 'mention' ? $mentionsDir : $commentsDir);
+						$modifiedCount += $changes;
+						$modifiedCommentsCount += $changes;
+					}
+				}
+			}
+			if($modifiedCommentsCount){
+				echo "Wrote {$modifiedCommentsCount} of comments\n";
+			}
+		}
+
 		return $modifiedCount;
 	}
+	//-# function for recursive nesting
+	protected function putComment($comment, $id, $fileDir){
+		$changes = 0;
+		$commentFilePath = $fileDir . '/' . $id . '.md';
+		try{
+			$content = $this->convertPost($comment['comment_content']);
+		}catch(Exception $e){
+			echo "error converting comment {$comment['comment_ID']}\n";
+			$content = $comment['comment_content'];
+		}
+		$meta = $comment->getMeta();
+		$fullContent = "---\n" . Yaml::dump($meta, 1, 1) . "---\n\n" . $content;
+		if(!file_exists($commentFilePath) || file_get_contents($commentFilePath) !== $fullContent){
+			echo "writing comment file {$commentFilePath}\n";
+			file_put_contents($commentFilePath, $fullContent);
+			++$changes;
+		}
+		if($comment->getComments()){
+			foreach($comment->getComments() as $key=> $sub){
+				$changes += $this->putComment($sub, "{$id}-" . ($key + 1), $fileDir);
+			}
+		}
+		return $changes;
+	}
+	static public function getDate($date, $gmt = null){
+		if($gmt){
+			$diff = date_diff(new DateTime($date), new DateTime($gmt));
+			$diff = ($diff->invert ? '+' : '-') . str_pad($diff->h, 2, '0', STR_PAD_LEFT) . ':00';
+			$date = new DateTime($date . $diff);
+		}else{
+			$date = new DateTime($date);
+		}
+		return $date;
+	}
+	protected function convertPost(string $content){
+		//--fix: some posts seem to have wrong line break
+		$content = str_replace("\r\n", "\n", $content);
 
+		//--fix: posts seem to have some chars encoded, shouldn't when markdown
+		if(strpos($content, '<pre>') === false || strpos($content, '```') !== false){
+			$content = htmlspecialchars_decode($content);
+		}
+
+		return $this->toMarkdownConverter->convert($content);
+	}
 	protected function getPostPath(array $post){
 		$path = $this->permalinkStructure;
 		if(substr($path, 0, 1) !== '/'){
