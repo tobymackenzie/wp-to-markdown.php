@@ -32,6 +32,9 @@ class WPToMarkdown extends Task{
 	protected $commentsPath = '/comments';
 	//---path to save files to
 	protected $destination;
+	protected $mediaPath = '/media';
+	//---path to rsync media from, needs to be in rsync path format like host:path if remote.  trailing slash added automatically
+	protected $mediaSyncPath;
 	protected $mentionsPath = '/mentions';
 	//---path to save original content as files to.  Primarily to verify changes locally.  No-op if empty
 	protected $origDestination;
@@ -377,6 +380,134 @@ class WPToMarkdown extends Task{
 			}
 			if($modifiedCommentsCount){
 				echo "Wrote {$modifiedCommentsCount} of comments\n";
+			}
+		}
+
+		//==media
+		if($this->mediaPath && $this->mediaSyncPath){
+			$mediaPath = $this->destination . $this->mediaPath;
+			if(!is_dir($mediaPath)){
+				mkdir($mediaPath);
+			}
+			$syncOut = shell_exec("rsync -am --exclude '*.yml' --stats {$this->mediaSyncPath}/ {$mediaPath}/");
+			if(preg_match('/files transferred: ([\d]+)/', $syncOut, $matches) && $matches[1] > 0){
+				$modifiedCount += $matches[1];
+				echo "synced {$matches[1]} media files. stats:\n";
+				echo "$syncOut";
+			}
+			$mediaQuery = $this->db->query([
+				'values'=> 'this.ID, this.post_date, this.post_date_gmt, this.post_content, this.post_title, this.post_excerpt, this.post_name, this.post_modified, this.post_modified_gmt, this.post_parent, this.guid, this.post_mime_type, meta1.meta_value as file, meta2.meta_value as meta, meta3.meta_value as alt',
+				'table'=> $this->dbPrefix . 'posts',
+				'joins'=> [
+					'meta1'=> [
+						'on'=> 'meta1.post_id = this.ID AND meta1.meta_key = "_wp_attached_file"',
+						'table'=> $this->dbPrefix . 'postmeta',
+						'type'=> 'LEFT',
+					],
+					'meta2'=> [
+						'on'=> 'meta2.post_id = this.ID AND meta2.meta_key = "_wp_attachment_metadata"',
+						'table'=> $this->dbPrefix . 'postmeta',
+						'type'=> 'LEFT',
+					],
+					'meta3'=> [
+						'on'=> 'meta3.post_id = this.ID AND meta3.meta_key = "_wp_attachment_image_alt"',
+						'table'=> $this->dbPrefix . 'postmeta',
+						'type'=> 'LEFT',
+					],
+				],
+				'where'=> [
+					'this.post_type'=> 'attachment',
+				],
+			]);
+			$modifiedMediaMetaCount = 0;
+			while(($media = $mediaQuery->fetch())){
+				$file = $media['file'];
+				$mediaMetaPath = $mediaPath . '/' . pathinfo($file, PATHINFO_DIRNAME) . '/' . pathinfo($file, PATHINFO_FILENAME) . '.yml';
+				$meta = ['file'=> $file];
+				foreach([
+					'alt'=> ['alt', 'post_excerpt'],
+					'content'=> 'post_content',
+					'id'=> 'ID',
+					'date'=> 'post_date',
+					'guid'=> 'guid',
+					'mime'=> 'post_mime_type',
+					'modified'=> 'post_modified',
+					'parent'=> 'post_parent',
+					'title'=> 'post_title',
+				] as $to=> $from){
+					switch($to){
+						case 'date':
+						case 'modified':
+							$value = static::getDate($media[$from], $media[$from . '_gmt']);
+						break;
+						default:
+							if(is_array($from)){
+								$value = null;
+								foreach($from as $i){
+									if(!empty($media[$i])){
+										$value = $media[$i];
+									}
+								}
+							}else{
+								$value = $media[$from] ?? null;
+							}
+						break;
+					}
+					if(!empty($value)){
+						$meta[$to] = $value;
+					}
+				}
+				if(!empty($media['meta'])){
+					$metaMeta = unserialize($media['meta']);
+					if(!empty($metaMeta['width'])){
+						$meta['width'] = $metaMeta['width'];
+					}
+					if(!empty($metaMeta['height'])){
+						$meta['height'] = $metaMeta['height'];
+					}
+					if(!empty($metaMeta['sizes'])){
+						$sizes = [];
+						foreach($metaMeta['sizes'] as $key=> $val){
+							$size = [];
+							foreach(['file', 'width', 'height'] as $subKey){
+								if(!empty($val[$subKey])){
+									$size[$subKey] = $val[$subKey];
+								}
+							}
+							if(!empty($size)){
+								$sizes[$key] = $size;
+							}
+						}
+						if(!empty($sizes)){
+							$meta['sizes'] = $sizes;
+						}
+					}
+					if(!empty($metaMeta['image_meta'])){
+						foreach($metaMeta['image_meta'] as $key=> $value){
+							if(!empty($value) && $key !== 'title'){
+								if($key === 'created_timestamp'){
+									try{
+										$value = new DateTime('@' . $value);
+									}catch(Exception $e){}
+									$key = 'created';
+								}else{
+									$key = lcfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $key))));
+									$key = lcfirst(str_replace('_', '', ucwords($key, '_')));
+								}
+								$meta[$key] = $value;
+							}
+						}
+					}
+				}
+				$meta = Yaml::dump($meta, 2);
+				if($meta && (!file_exists($mediaMetaPath) || file_get_contents($mediaMetaPath) !== $meta)){
+					file_put_contents($mediaMetaPath, $meta);
+					++$modifiedMediaMetaCount;
+					++$modifiedCount;
+				}
+			}
+			if($modifiedMediaMetaCount){
+				echo "Wrote {$modifiedMediaMetaCount} media meta\n";
 			}
 		}
 
