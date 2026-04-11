@@ -38,6 +38,7 @@ class WPToMarkdown extends Task{
 	protected $mentionsPath = '/mentions';
 	//---path to save original content as files to.  Primarily to verify changes locally.  No-op if empty
 	protected $origDestination;
+	protected $tagPath = '/tag.csv';
 
 	public function __construct($opts = []){
 		foreach($opts as $key=> $value){
@@ -380,6 +381,40 @@ class WPToMarkdown extends Task{
 			}
 			if($modifiedCommentsCount){
 				echo "Wrote {$modifiedCommentsCount} of comments\n";
+			}
+		}
+
+		//==tags
+		if($this->tagPath){
+			$tagQuery = $this->db->query([
+				'values'=> 'this.slug, this.name, tt.description',
+				'table'=> $this->dbPrefix . 'terms',
+				'joins'=> [
+					'tt'=> [
+						'on'=> 'tt.term_id = this.term_id',
+						'table'=> $this->dbPrefix . 'term_taxonomy',
+					],
+				],
+				'where'=> [
+					'tt.taxonomy'=> 'post_tag',
+					'this.slug IS NOT NULL',
+				],
+			]);
+			$fp = fopen('php://memory', 'r+');
+			fputcsv($fp, ['slug', 'name', 'description'], ',', '"', '');
+			while(($tag = $tagQuery->fetch())){
+				if($tag['slug'] === $tag['name']){
+					$tag['name'] = null;
+				}
+				fputcsv($fp, $tag, ',', '"', '');
+			}
+			rewind($fp);
+			$csv = stream_get_contents($fp);
+			fclose($fp);
+			$tagFile = $this->destination . $this->tagPath;
+			if(!file_exists($tagFile) || file_get_contents($tagFile) !== $csv){
+				file_put_contents($tagFile, $csv);
+				echo "Wrote tags file\n";
 			}
 		}
 
