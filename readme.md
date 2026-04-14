@@ -3,6 +3,8 @@ WP To Markdown
 
 Convert WordPress posts to markdown files, in a format and folder structure friendly to my `tjm/wiki.php` project.  Puts various values in "front-matter" (YAML at top of markdown file).  Prefers `post_content_filtered` field for post content, which is used by JetPack markdown plugin, which I use for my newer posts.  Still has problems converting certain post content:  Check the results before using on a live site.  Can be run repeatedly, will only update files if content has changed.  Does not remove posts removed in WordPress.
 
+In addition to posts, also copies media, categories, tags as CSV list, and comments as markdown in a certain structure.  I copy the data that I think may be useful for me in a markdown processor version of the WordPress site in question.  You'll have to modify the code if you want anything else.
+
 To run, install package, run `composer install`, then run `bin/run` at the command line.  You must either pass the non-empty values for these arguments:
 
 1. output destination path
